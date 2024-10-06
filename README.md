@@ -28,12 +28,41 @@ The pipeline follows a simple ETL architecture:
 3. **Load**: The transformed data is written back to Azure Data Lake in a different container, in **Parquet** format.
 
 ## Dataset Description
-The dataset used for this project contains [insert dataset description, e.g., customer transaction data, sales data, etc.]. The raw data is stored in CSV format and contains the following columns:
-- `column_1`: Description of the column.
-- `column_2`: Description of the column.
-- `...`
+The dataset used for this project contains a datavase with information about taxi trips in Chicago:
 
-The dataset is loaded from the Azure Data Lake `raw` container and processed in the pipeline.
+Table `neighborhoods`: data about the city's neighborhoods:
+- -`name`
+- -`neighborhood_id`
+
+Table `cabs`: data about the taxis
+
+- -`cab_id`: code of the vehicle
+- -`vehicle_id`: technical ID of the vehicle
+- -`company_name`: name of the company that owns the vehicle
+
+table  `trips`:
+
+- -`trip_id`: trip id
+- -`cab_id`: id of the vehicle
+- -`start_ts`: date and time of trip start (time rounded to the hour)
+- -`end_ts`: date and time of trip end (time rounded to the hour)
+- -`duration_seconds`: trip duration in seconds
+- -`distance_miles`: trip distance in miles
+- -`pickup_location_id`: pickup neighborhood code
+- -`dropoff_location_id`: dropoff neighborhood code
+
+`weather_records` table: weather data
+
+- -`record_id`: weather record code
+- -`ts`: date and time of the record (time rounded to the hour)
+- -`temperature`: temperature when the record was taken
+- -`description`: brief description of weather conditions, for example, "light rain" or "scattered clouds"
+
+## Table schema:
+
+![image](https://github.com/user-attachments/assets/bfd64168-da6d-40bf-9d01-ab909664fe6e)
+
+The dataset is loaded from the Azure Data Lake `container1` container and processed in the pipeline.
 
 ## ETL Pipeline Steps
 
@@ -41,35 +70,76 @@ The dataset is loaded from the Azure Data Lake `raw` container and processed in 
 The raw data is loaded from Azure Data Lake using PySpark's `spark.read` function:
 
 ```python
-raw_data = spark.read.format("csv").option("header", "true").load("path_to_raw_data_in_data_lake")
+cabs = spark.read.csv("/mnt/container1/cabs.csv", header=True, inferSchema=True)
+trips = spark.read.csv("/mnt/container1/trips.csv", header=True, inferSchema=True)
+neighborhoods = spark.read.csv("/mnt/container1/neighborhoods.csv", header=True, inferSchema=True)
+weather_records = spark.read.csv("/mnt/container1/weather_records.csv", header=True, inferSchema=True)
+datos = spark.read.csv("/mnt/container1/datos.csv", header=True, inferSchema=True)
 ```
 
 ### 2.Data Transformation
 The transformation process includes:
 
 - **Removing missing values**
-- **Handling duplicate records**
-- **Applying business logic transformations**
-- **Sample transformation code**
-
-```python
-# Dropping null values
-cleaned_data = raw_data.dropna()
-
-# Removing duplicates
-cleaned_data = cleaned_data.dropDuplicates()
-
-# Applying business logic
-transformed_data = cleaned_data.withColumn("new_column", some_transformation())
+```python 
+cabs = raw_data.dropna()
+trips = raw_data.dropna()
+neighborhoods = raw_data.dropna()
+weather_records = raw_data.dropna()
+datos = raw_data.dropna()
 ```
+- **Handling duplicate records**
+```python Removing duplicates
+cabs = cabs.dropDuplicates()
+trips = trips.dropDuplicates()
+neighborhoods = neighborhoods.dropDuplicates()
+weather_records = weather_records.dropDuplicates()
+datos = datos.dropDuplicates()
+```
+
+- **Spark SQL queries to filter**
+```python
+# Applying SparkSQL filters as:
+filtro2 = spark.sql("""
+        select *
+        from 
+            (select company_name, count(trip_id) as trips_amount 
+            from cabs inner join trips on cabs.cab_id=trips.cab_id
+        where company_name like '%Yellow%'  and start_ts::date between '2017-11-01' and '2017-11-07'
+            group by cabs.company_name) as sub1 union
+            (select company_name, count(trip_id) as trips_amount
+        from cabs inner join trips on cabs.cab_id=trips.cab_id
+        where company_name like '%Blue%'  and start_ts::date between '2017-11-01' and '2017-11-07'
+            group by cabs.company_name) 
+""")
+```
+- **Applying business logic transformations**
+```python
+res = st.levene(df_loop_ohare_good["duration_seconds"],
+                df_loop_ohare_bad["duration_seconds"])
+print('valor p:', res.pvalue)
+alpha = 5
+
+if (res.pvalue < alpha):
+    print("Rechazamos la hipótesis nula")
+else:
+    print("No podemos rechazar la hipótesis nula")
+```
+
+
 ### 3.Data Loading
 The transformed data is written back to Azure Data Lake in Parquet format for efficient storage and querying:
 ```python
-transformed_data.write.format("parquet").save("path_to_processed_data_in_data_lake")
+filtro1.write.mode("overwrite").parquet("/mnt/container1/sql_result_01")
+filtro2.write.mode("overwrite").parquet("/mnt/container1/sql_result_02")
+filtro3.write.mode("overwrite").parquet("/mnt/container1/sql_result_03")
+filtro4.write.mode("overwrite").parquet("/mnt/container1/sql_result_04")
+filtro5.write.mode("overwrite").parquet("/mnt/container1/sql_result_05")
+filtro6.write.mode("overwrite").parquet("/mnt/container1/sql_result_06")
 ```
 
 ### 4.Scheduling the Pipeline
-The ETL pipeline is scheduled to run daily using Azure Databricks Jobs. The job configuration is provided in the notebooks/job_config.py file.
+The ETL pipeline is scheduled to run weekly using Azure Databricks Jobs. The job configuration is provided in the notebooks/job_config.py file.
 
 ## Setup Instructions
 ### Prerequisites
@@ -82,18 +152,22 @@ The ETL pipeline is scheduled to run daily using Azure Databricks Jobs. The job 
 1. Clone this repository:
    
 ```python
-git clone https://github.com/your_username/your_repo_name.git
+git clone https://https://github.com/Omarciano19/ETL_Azure
 ```
 
 2. Upload the notebook files to your Databricks workspace.
 
 3. Create a new cluster in Databricks (ensure you have enough vCPUs).
+   - With a student acount I recomend using a single node configuration with a `Standard_F4` node type.
 
 4. Configure the cluster with the necessary libraries:
     - `pyspark`
     - `azure-storage-blob`
 
-5. Run the notebooks sequentially:
+5. Run the notebook:
+    - Run the only notebook.
+
+   In the next versión, you will need to run then sequentially:
     - `01_data_extraction.ipynb`
     - `02_data_transformation.ipynb`
     - `03_data_loading.ipynb`
@@ -103,7 +177,7 @@ git clone https://github.com/your_username/your_repo_name.git
 
 ## Results and Optimization
 
-- **Data Processing Time**: The pipeline processed approximately **X GB** of data in **Y minutes**.
+- **Data Processing Time**: The pipeline processed approximately **1 GB** of data in **3 minutes**.
 - **Optimizations**:
     - Used **partitioning** and **caching** to speed up transformations.
     - Stored final output in **Parquet** format for better query performance.
